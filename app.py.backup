@@ -1,0 +1,436 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from PIL import Image
+from pathlib import Path
+
+st.set_page_config(page_title="Coral Bleaching & Ocean Climate Analysis", layout="wide", initial_sidebar_state="collapsed")
+
+BASE_DIR = Path(__file__).resolve().parent
+
+def find_path(name: str, is_dir: bool = False) -> Path:
+    for p in [BASE_DIR / name, Path(name), Path("Users/Ravi/Documents/Visualising Data/project") / name, Path.home() / "Documents/Visualising Data/project" / name]:
+        if p.is_dir() if is_dir else p.exists():
+            return p
+    return BASE_DIR / name
+
+IMAGE_ROOT = find_path("images", is_dir=True)
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+html { scroll-behavior: smooth; }
+.stApp { background-color: #0f171e; color: #d6dde2; }
+.main, .block-container { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 400; max-width: 1220px; padding-top: 2rem; padding-bottom: 4rem; }
+h1, h2, h3, h4 { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; color: #f0f4f7 !important; font-weight: 600 !important; letter-spacing: -0.015em; }
+h1 { font-size: 2.1rem !important; margin-bottom: 0.25rem !important; }
+h2 { font-size: 1.45rem !important; margin-top: 0.5rem !important; margin-bottom: 0.35rem !important; }
+h3 { font-size: 1.15rem !important; }
+p, label, div, li, span { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; }
+.nav-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin: 18px 0 26px 0; padding: 16px; background: #15202b; border: 1px solid #243442; border-radius: 6px; }
+.nav-item { display: block; padding: 9px 12px; background: #1b2836; border: 1px solid #283a4a; border-radius: 4px; color: #d6dde2 !important; text-decoration: none !important; font-size: 0.86rem; font-weight: 500; transition: border-color 0.15s ease, background-color 0.15s ease; }
+.nav-item:hover { border-color: #5ea897; background: #203142; color: #ffffff !important; }
+.nav-num { color: #5ea897; font-weight: 600; margin-right: 6px; }
+.glossary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin: 12px 0 24px 0; }
+.glossary-card { background: #15202b; border: 1px solid #243442; border-radius: 6px; padding: 14px 16px; }
+.glossary-term { color: #5ea897; font-size: 0.9rem; font-weight: 600; margin-bottom: 4px; }
+.glossary-def { color: #b8c4cc; font-size: 0.83rem; line-height: 1.5; margin: 0; }
+.section-anchor { padding-top: 18px; margin-top: 28px; border-top: 1px solid #243442; }
+.section-tag { color: #5ea897; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2px; }
+.narrative-box { background: #15202b; border: 1px solid #243442; border-left: 3px solid #5ea897; border-radius: 0 6px 6px 0; padding: 18px 22px; margin-top: 14px; margin-bottom: 10px; }
+.narrative-box p { margin: 0 0 10px 0; font-size: 0.9rem; color: #cfd8de; }
+.narrative-box p:last-child { margin-bottom: 0; }
+.narrative-label { color: #f0f4f7; font-weight: 600; }
+div[data-testid="stMetric"] { background: #15202b; border: 1px solid #243442; border-radius: 6px; padding: 14px 16px; }
+div[data-testid="stMetricValue"] { color: #f0f4f7; font-size: 1.55rem; font-weight: 600; }
+div[data-testid="stMetricLabel"] { color: #8fa1ad; font-size: 0.78rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+</style>
+""", unsafe_allow_html=True)
+
+@st.cache_data(show_spinner=False)
+def load_all_datasets():
+    df_global, df_regional, df_climate = None, None, None
+
+    g_path = find_path("global_bleaching_environmental.csv")
+    if not g_path.exists():
+        g_path = find_path("coral.csv")
+    if g_path.exists():
+        df_global = pd.read_csv(g_path, low_memory=False)
+        for col in ["Percent_Bleaching", "Depth_m", "SSTA", "SSTA_DHW", "Temperature_Mean", "Temperature_Maximum", "Turbidity", "Windspeed", "Distance_to_Shore", "Cyclone_Frequency", "Latitude_Degrees", "Longitude_Degrees", "Date_Year", "Date_Month"]:
+            if col in df_global.columns:
+                df_global[col] = pd.to_numeric(df_global[col], errors="coerce")
+
+    r_path = find_path("coral_bleaching.csv")
+    if r_path.exists():
+        df_regional = pd.read_csv(r_path, low_memory=False)
+        for col in ["Year", "Temperature_Celsius", "SSTA", "DHW_Stress", "Hotspot", "ONI_Index", "Chlorophyll_A_mg_m3", "Bleaching_Percent", "Salinity", "Dissolved_O2", "pH", "Nitrate", "Distance_to_Shore_km", "NDVI", "Turbidity_NTU"]:
+            if col in df_regional.columns:
+                df_regional[col] = pd.to_numeric(df_regional[col], errors="coerce")
+
+    c_path = find_path("realistic_ocean_climate_dataset.csv")
+    if c_path.exists():
+        df_climate = pd.read_csv(c_path, low_memory=False)
+        for col in ["SST (°C)", "pH Level", "Species Observed"]:
+            df_climate[col] = pd.to_numeric(df_climate[col], errors="coerce")
+        df_climate["Severity_Clean"] = df_climate["Bleaching Severity"].fillna("None")
+        df_climate["Heatwave_Num"] = df_climate["Marine Heatwave"].astype(int)
+
+    return df_global, df_regional, df_climate
+
+def find_stage_photo(stage_name: str):
+    valid_exts = {".jpg", ".jpeg", ".png", ".webp"}
+    if IMAGE_ROOT.is_dir():
+        for f in sorted(IMAGE_ROOT.iterdir()):
+            if f.is_file() and f.stem.lower() == stage_name.lower() and f.suffix.lower() in valid_exts:
+                try:
+                    return Image.open(f).convert("RGB"), f
+                except Exception:
+                    pass
+        for sub in sorted(IMAGE_ROOT.iterdir()):
+            if sub.is_dir() and sub.name.lower() == stage_name.lower():
+                for f in sorted(sub.iterdir()):
+                    if f.is_file() and f.suffix.lower() in valid_exts:
+                        try:
+                            return Image.open(f).convert("RGB"), f
+                        except Exception:
+                            pass
+    return None, None
+
+def blend_coral_stages(progress_pct: int, img_healthy: Image.Image, img_bleached: Image.Image, img_dead: Image.Image) -> Image.Image:
+    b = img_bleached.resize(img_healthy.size, Image.Resampling.LANCZOS)
+    d = img_dead.resize(img_healthy.size, Image.Resampling.LANCZOS)
+    return Image.blend(img_healthy, b, progress_pct / 50.0) if progress_pct <= 50 else Image.blend(b, d, (progress_pct - 50) / 50.0)
+
+PALETTE = {"healthy": "#4c9a8a", "watch": "#d4a359", "bleached": "#c95b4b", "dead": "#73302a", "cool": "#4f83a3", "neutral": "#7b8c98"}
+AXIS_STYLE = dict(gridcolor="rgba(255, 255, 255, 0.07)", zerolinecolor="rgba(255, 255, 255, 0.12)", linecolor="rgba(255, 255, 255, 0.15)")
+
+def make_layout(**overrides):
+    return {**dict(template="plotly_dark", paper_bgcolor="rgba(15, 23, 30, 0)", plot_bgcolor="#15202b", font=dict(family="Inter, sans-serif", color="#d6dde2", size=12), margin=dict(l=55, r=35, t=42, b=55)), **overrides}
+
+def section_header(anchor: str, tag: str, title: str):
+    st.markdown(f'<div id="{anchor}" class="section-anchor"></div><div class="section-tag">{tag}</div><h2>{title}</h2>', unsafe_allow_html=True)
+
+def render_explanation(context: str, description: str, conclusion: str):
+    st.markdown(f'<div class="narrative-box"><p><span class="narrative-label">1. Context &amp; Data Source:</span> {context}</p><p><span class="narrative-label">2. Description &amp; Methodology:</span> {description}</p><p><span class="narrative-label">3. Conclusion &amp; Critical Assessment:</span> {conclusion}</p></div>', unsafe_allow_html=True)
+
+def add_linear_trend(fig, x_vals, y_vals, color="#d4a359", name="Linear Trend"):
+    x, y = np.asarray(x_vals, dtype=float), np.asarray(y_vals, dtype=float)
+    valid = np.isfinite(x) & np.isfinite(y)
+    if valid.sum() >= 5:
+        slope, intercept = np.polyfit(x[valid], y[valid], 1)
+        x_line = np.linspace(np.nanmin(x[valid]), np.nanmax(x[valid]), 100)
+        fig.add_trace(go.Scatter(x=x_line, y=slope * x_line + intercept, mode="lines", line=dict(color=color, width=2, dash="dash"), name=name, hoverinfo="skip"))
+
+df_global, df_regional, df_climate = load_all_datasets()
+
+st.markdown("# Global and Regional Coral Reef Bleaching Analysis")
+st.markdown("<p style='color:#8fa1ad;font-size:0.96rem;margin-top:-4px;margin-bottom:18px;'>An integrated visual investigation of thermal stress, El Nino climate cycles, ocean acidification, and biological reef degradation across four multi-scale datasets (1980–2026).</p>", unsafe_allow_html=True)
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Global Reef Surveys", f"{len(df_global):,}" if df_global is not None else "Missing", "1980–2020 (global_bleaching_environmental)")
+m2.metric("Regional Sensor Records", f"{len(df_regional):,}" if df_regional is not None else "Missing", "2000–2026 (coral_bleaching.csv)")
+m3.metric("Ocean Climate Observations", f"{len(df_climate):,}" if df_climate is not None else "Missing", "2015–2023 (realistic_ocean_climate)")
+m4.metric("Distinct Countries Monitored", f"{df_global['Country_Name'].nunique()}" if df_global is not None else "Missing", "Across 5 Ocean Basins")
+
+nav_items = [
+    ("#glossary", "00", "Key Scientific Terms &amp; Metrics"),
+    ("#sec-1", "01", "Yearly Reef Decline &amp; El Nino Link"),
+    ("#sec-2", "02", "Cumulative Heat Stress (DHW &amp; Hotspot)"),
+    ("#sec-3", "03", "SST vs. Seawater pH Density Contour"),
+    ("#sec-4", "04", "Global Geography of Bleaching Hotspots"),
+    ("#sec-5", "05", "Depth, Reef Exposure &amp; Seasonal Peaks"),
+    ("#sec-6", "06", "Water Chemistry &amp; Local Stressors"),
+    ("#sec-7", "07", "Multi-Variable Heatwave Parallel Plot"),
+    ("#sec-8", "08", "Three Stages of Coral Health (Interactive)"),
+]
+st.markdown('<div class="nav-bar">' + "".join(f'<a class="nav-item" href="{h}"><span class="nav-num">{n}</span>{t}</a>' for h, n, t in nav_items) + '</div>', unsafe_allow_html=True)
+
+section_header("glossary", "Reference Guide", "00. Key Scientific Terms and Metrics")
+st.markdown("<p style='color:#9fb0bc;font-size:0.88rem;'>Definitions of oceanographic and climate indicators used across the eight visualizations below.</p>", unsafe_allow_html=True)
+glossary_items = [
+    ("SST / SSC (Sea Surface Temperature in Celsius)", "The water temperature near the ocean surface measured in degrees Celsius. Most tropical reef-building corals thrive between 23 °C and 29 °C; temperatures just 1–2 °C above normal summer highs trigger stress."),
+    ("SSTA (Sea Surface Temperature Anomaly)", "The difference (in °C) between the observed sea surface temperature and the long-term historical average for that exact location and time of year. Positive values indicate abnormal warming."),
+    ("Hotspot (Coral Bleaching Hotspot)", "A positive temperature anomaly measured specifically above the reef's warmest climatological month (Maximum Monthly Mean). Values above +1.0 °C indicate immediate thermal stress risk."),
+    ("DHW (Degree Heating Weeks)", "A cumulative measure of heat stress combining intensity and duration over a rolling 12-week window (unit: °C-weeks). Significant bleaching occurs at 4 °C-weeks, and widespread mortality begins above 8 °C-weeks."),
+    ("ENSO &amp; ONI (El Nino-Southern Oscillation)", "A recurring climate cycle in the tropical Pacific tracked by the Oceanic Nino Index (ONI). <b>El Nino</b> (ONI &gt; +0.5 °C) drives global ocean warming and mass bleaching; <b>La Nina</b> (ONI &lt; -0.5 °C) brings cooler waters."),
+    ("Ocean pH, Dissolved Oxygen &amp; Turbidity", "<b>pH</b> measures ocean acidity (lower pH weakens coral calcium carbonate skeletons). <b>Dissolved O2</b> supports coral respiration, while <b>Turbidity (NTU)</b> measures suspended particles that block sunlight or carry runoff."),
+]
+st.markdown('<div class="glossary-grid">' + "".join(f'<div class="glossary-card"><div class="glossary-term">{t}</div><p class="glossary-def">{d}</p></div>' for t, d in glossary_items) + '</div>', unsafe_allow_html=True)
+
+section_header("sec-1", "Visualization 01 — Temporal Trajectory &amp; Climate Forcing", "01. Years of Severe Coral Reef Degradation and the El Nino Connection")
+view_choice = st.radio("Select timeline source:", ["Global Reef Record (1980–2020, n = 34,515)", "Regional Sensor Record with Explicit ONI & ENSO Labels (2000–2026, n = 2,000)"], horizontal=True, key="sec1_source")
+
+if view_choice.startswith("Global") and df_global is not None:
+    yearly = df_global.dropna(subset=["Date_Year", "Percent_Bleaching"]).groupby("Date_Year").agg(
+        mean_bleach=("Percent_Bleaching", "mean"), severe_share=("Percent_Bleaching", lambda s: (s >= 30).mean() * 100),
+        mean_ssta=("SSTA", "mean"), records=("Percent_Bleaching", "size")
+    ).reset_index()
+    yearly = yearly[(yearly["Date_Year"].between(1980, 2020)) & (yearly["records"] >= 15)].copy()
+    yearly["ENSO_State"] = yearly["mean_ssta"].apply(lambda v: "El Nino Warming" if pd.notna(v) and v >= 0.45 else ("La Nina Cooling" if pd.notna(v) and v <= -0.35 else "Neutral"))
+    enso_bg = {"El Nino Warming": PALETTE["bleached"], "La Nina Cooling": PALETTE["cool"], "Neutral": PALETTE["neutral"]}
+
+    fig1 = go.Figure()
+    for _, row in yearly.iterrows():
+        fig1.add_vrect(x0=row["Date_Year"] - 0.5, x1=row["Date_Year"] + 0.5, fillcolor=enso_bg[row["ENSO_State"]], opacity=0.14, line_width=0, layer="below")
+    fig1.add_trace(go.Bar(x=yearly["Date_Year"], y=yearly["severe_share"], name="Severely Bleached Reefs (>=30% bleached)", marker_color="rgba(201, 91, 75, 0.35)", hovertemplate="<b>%{x}</b><br>Severely bleached sites: %{y:.1f}%<extra></extra>"))
+    fig1.add_trace(go.Scatter(x=yearly["Date_Year"], y=yearly["mean_bleach"], mode="lines+markers", name="Mean Bleaching Severity (%)", line=dict(color="#f0f4f7", width=2.4), marker=dict(size=7, color=[enso_bg[e] for e in yearly["ENSO_State"]], line=dict(color="#0f171e", width=1)), customdata=np.stack([yearly["records"], yearly["ENSO_State"]], axis=-1), hovertemplate="<b>Year %{x}</b><br>Mean Bleaching: %{y:.1f}%<br>Regime: %{customdata[1]}<br>Surveys: %{customdata[0]}<extra></extra>"))
+    fig1.add_trace(go.Scatter(x=yearly["Date_Year"], y=yearly["mean_ssta"], mode="lines", name="Mean Temperature Anomaly (SSTA, °C)", line=dict(color="#d4a359", width=1.8, dash="dot"), yaxis="y2", hovertemplate="<b>Year %{x}</b><br>Mean SSTA: %{y:+.2f} °C<extra></extra>"))
+    for label, color in enso_bg.items():
+        fig1.add_trace(go.Scatter(x=[None], y=[None], mode="markers", marker=dict(size=10, color=color, symbol="square"), name=f"Background: {label}"))
+    for _, row in yearly[yearly["Date_Year"].isin([1998, 2002, 2005, 2010, 2016])].iterrows():
+        fig1.add_annotation(x=row["Date_Year"], y=row["mean_bleach"], text=f"{int(row['Date_Year'])} ({row['mean_bleach']:.1f}%)", showarrow=True, arrowhead=0, arrowcolor="#d4a359", ay=-28, font=dict(color="#f0f4f7", size=11))
+
+    fig1.update_layout(**make_layout(height=490, xaxis=dict(title="Survey Year", dtick=4, **AXIS_STYLE), yaxis=dict(title="Bleaching Severity & Severe Reef Share (%)", **AXIS_STYLE), yaxis2=dict(title="Mean SSTA (°C)", overlaying="y", side="right", showgrid=False, color="#d4a359"), legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center")))
+    st.plotly_chart(fig1, use_container_width=True)
+
+    top_years = yearly.nlargest(6, "mean_bleach")[["Date_Year", "mean_bleach", "severe_share", "mean_ssta", "ENSO_State", "records"]].round({"mean_bleach": 1, "severe_share": 1, "mean_ssta": 2})
+    top_years.columns = ["Year", "Mean Bleaching (%)", "Severely Bleached Sites (%)", "Mean SSTA (°C)", "ENSO Regime", "Survey Count"]
+    top_years["Year"] = top_years["Year"].astype(int)
+    st.dataframe(top_years, use_container_width=True, hide_index=True)
+
+    render_explanation(
+        context="Global coral reef degradation does not happen evenly from year to year; instead, it occurs in acute pulses triggered by planetary-scale ocean warming. Using 34,515 dated surveys from global_bleaching_environmental.csv (1980–2020), this chart identifies exactly which years experienced mass reef loss and how they align with El Nino warming.",
+        description="The white line tracks annual mean bleaching severity (%), while the shaded bars show the percentage of surveyed reefs experiencing severe bleaching (>=30% colony loss). The dashed gold line on the right axis plots the Sea Surface Temperature Anomaly (SSTA), and vertical background bands distinguish El Nino warming years (coral red) from La Nina cooling years (blue).",
+        conclusion=f"Annual temperature anomalies correlate positively with mean bleaching severity (r = {yearly['mean_bleach'].corr(yearly['mean_ssta']):.2f}). The sharpest global degradation spikes occurred during the 1998 Super El Nino (43.1% mean bleaching; 69.3% of sites severely bleached), the 2005 Caribbean/Atlantic thermal anomaly (25.3%), 2002 (17.2%), and the 2015–2016 global El Nino event (15.2%). A key data limitation is that post-1998 monitoring expanded rapidly, meaning earlier 1980s events are under-sampled compared to modern surveys."
+    )
+elif df_regional is not None:
+    reg_yearly = df_regional.groupby("Year").agg(mean_bleach=("Bleaching_Percent", "mean"), mean_oni=("ONI_Index", "mean"), dominant_enso=("ENSO_Phase", lambda s: s.mode().iat[0])).reset_index()
+    enso_colors = {"El Nino": PALETTE["bleached"], "La Nina": PALETTE["cool"], "Neutral": PALETTE["neutral"]}
+    fig1_reg = go.Figure()
+    for _, row in reg_yearly.iterrows():
+        fig1_reg.add_vrect(x0=row["Year"] - 0.5, x1=row["Year"] + 0.5, fillcolor=enso_colors.get(row["dominant_enso"], PALETTE["neutral"]), opacity=0.15, line_width=0, layer="below")
+    fig1_reg.add_trace(go.Scatter(x=reg_yearly["Year"], y=reg_yearly["mean_bleach"], mode="lines+markers", name="Mean Bleaching (%)", line=dict(color="#f0f4f7", width=2.4), marker=dict(size=8, color=[enso_colors.get(e, PALETTE["neutral"]) for e in reg_yearly["dominant_enso"]])))
+    fig1_reg.add_trace(go.Scatter(x=reg_yearly["Year"], y=reg_yearly["mean_oni"], mode="lines", name="Oceanic Nino Index (ONI)", line=dict(color="#d4a359", width=1.8, dash="dot"), yaxis="y2"))
+    fig1_reg.update_layout(**make_layout(height=460, xaxis=dict(title="Year", dtick=2, **AXIS_STYLE), yaxis=dict(title="Mean Bleaching (%)", **AXIS_STYLE), yaxis2=dict(title="ONI Index (°C)", overlaying="y", side="right", showgrid=False, color="#d4a359"), legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center")))
+    st.plotly_chart(fig1_reg, use_container_width=True)
+    render_explanation(
+        context="This regional view uses all 2,000 sensor observations from coral_bleaching.csv (Indian Ocean sites: Palk Bay, Gulf of Mannar, and Rameswaram across 2000–2026), which include explicit Oceanic Nino Index (ONI) and ENSO phase classifications.",
+        description="The primary line tracks annual mean bleaching percentage, while the dashed gold line plots the ONI climate index on the right axis. Background shading denotes the dominant ENSO regime for each year.",
+        conclusion=f"In the regional sensor record, annual bleaching tracks the ONI index closely (r = {reg_yearly['mean_bleach'].corr(reg_yearly['mean_oni']):.2f}), peaking sharply during the 2016 El Nino (52.7% mean bleaching, ONI +1.94) and lingering into 2017 (39.5%) before subsiding during Neutral and La Nina years. Note that records beyond 2024 represent modeled scenario projections within the sensor dataset."
+    )
+
+section_header("sec-2", "Visualization 02 — Thermal Dose-Response Mechanism", "02. Cumulative Heat Stress (DHW) and Hotspot Thresholds")
+if df_regional is not None:
+    col2a, col2b = st.columns([1.45, 1])
+    state_labels = {"healthy": "Healthy", "watch": "Thermal Watch", "bleached": "Bleached", "severe_bleach": "Severe Bleaching"}
+    state_colors = {"Healthy": PALETTE["healthy"], "Thermal Watch": PALETTE["watch"], "Bleached": PALETTE["bleached"], "Severe Bleaching": PALETTE["dead"]}
+    sub_reg = df_regional.dropna(subset=["DHW_Stress", "Bleaching_Percent", "Damage_State"]).copy()
+    sub_reg["State_Label"] = sub_reg["Damage_State"].map(state_labels).fillna(sub_reg["Damage_State"])
+
+    with col2a:
+        fig2_scatter = px.scatter(sub_reg, x="DHW_Stress", y="Bleaching_Percent", color="State_Label", color_discrete_map=state_colors, hover_data={"Site_Name": True, "Hotspot": ":.2f", "Temperature_Celsius": ":.1f", "ENSO_Phase": True}, opacity=0.72)
+        add_linear_trend(fig2_scatter, sub_reg["DHW_Stress"], sub_reg["Bleaching_Percent"], color="#f0f4f7")
+        fig2_scatter.add_vline(x=4.0, line_dash="dot", line_color="#d4a359", annotation_text="4 °C-wks: Bleaching Warning", annotation_position="top right", annotation_font=dict(color="#d4a359", size=11))
+        fig2_scatter.add_vline(x=8.0, line_dash="dot", line_color="#c95b4b", annotation_text="8 °C-wks: Mortality Risk", annotation_position="top right", annotation_font=dict(color="#c95b4b", size=11))
+        fig2_scatter.update_layout(**make_layout(height=440, xaxis=dict(title="Degree Heating Weeks (DHW, °C-weeks)", **AXIS_STYLE), yaxis=dict(title="Coral Bleaching (%)", **AXIS_STYLE), legend=dict(title="Recorded Damage State", orientation="h", y=-0.22, x=0.5, xanchor="center")))
+        st.plotly_chart(fig2_scatter, use_container_width=True)
+
+    with col2b:
+        agg_state = sub_reg.groupby("Damage_State").agg(mean_bleach=("Bleaching_Percent", "mean"), mean_dhw=("DHW_Stress", "mean"), mean_hotspot=("Hotspot", "mean"), count=("Bleaching_Percent", "size")).reindex(["healthy", "watch", "bleached", "severe_bleach"]).reset_index()
+        agg_state["Label"] = agg_state["Damage_State"].map(state_labels)
+        fig2_bar = go.Figure(go.Bar(x=agg_state["Label"], y=agg_state["mean_bleach"], marker_color=[state_colors[l] for l in agg_state["Label"]], text=agg_state["mean_bleach"].round(1).astype(str) + "%", textposition="outside", customdata=np.stack([agg_state["mean_dhw"], agg_state["mean_hotspot"], agg_state["count"]], axis=-1), hovertemplate="<b>%{x}</b><br>Mean Bleaching: %{y:.1f}%<br>Mean DHW: %{customdata[0]:.2f} °C-wks<br>Mean Hotspot: %{customdata[1]:+.2f} °C<br>Observations: %{customdata[2]}<extra></extra>"))
+        fig2_bar.update_layout(**make_layout(height=440, xaxis=dict(title="Reef Damage Classification", **AXIS_STYLE), yaxis=dict(title="Mean Bleaching (%)", range=[0, 100], **AXIS_STYLE), showlegend=False))
+        st.plotly_chart(fig2_bar, use_container_width=True)
+
+    render_explanation(
+        context="A single hot afternoon rarely bleaches a reef; instead, corals bleach when heat accumulates over weeks. NOAA Coral Reef Watch defines two operational thresholds using Degree Heating Weeks (DHW): 4 °C-weeks triggers significant bleaching, and 8 °C-weeks triggers widespread mortality.",
+        description="Left: All 2,000 observations from coral_bleaching.csv plotting cumulative DHW_Stress against Bleaching_Percent, colored by field Damage_State with NOAA warning thresholds marked vertically. Right: Average bleaching percentage, mean DHW, and mean Hotspot anomaly across each reef damage category.",
+        conclusion=f"Cumulative DHW is the strongest single predictor of bleaching intensity in the regional dataset (r = {sub_reg['DHW_Stress'].corr(sub_reg['Bleaching_Percent']):.2f}). Reefs classified as Healthy average just 0.51 °C-weeks of heat stress (3.0% bleaching), whereas Severe Bleaching observations average 4.66 °C-weeks and 84.4% colony bleaching. Once DHW exceeds 4 °C-weeks, nearly all observations shift into Bleached or Severe Bleaching states."
+    )
+else:
+    st.warning("coral_bleaching.csv was not found in the project folder.")
+
+section_header("sec-3", "Visualization 03 — Bivariate Thermal &amp; Acidification Density", "03. Sea Surface Temperature (SST) vs. Seawater pH Density Distribution")
+if df_climate is not None:
+    fig3_contour = go.Figure()
+    fig3_contour.add_trace(go.Histogram2dContour(
+        x=df_climate["SST (°C)"], y=df_climate["pH Level"], ncontours=15,
+        colorscale=[[0.0, "#15202b"], [0.18, "#1b364a"], [0.40, "#295878"], [0.65, "#457fa6"], [0.85, "#6ea8cf"], [1.0, "#a8d5f2"]],
+        contours=dict(coloring="fill", showlines=True), line=dict(color="rgba(168, 213, 242, 0.35)", width=1),
+        colorbar=dict(title="Density", thickness=12), hovertemplate="SST: %{x:.1f} °C<br>Seawater pH: %{y:.3f}<br>Density Count: %{z}<extra></extra>"
+    ))
+    for subset, name, marker_cfg, tag in [
+        (df_climate[~df_climate["Marine Heatwave"]], "Normal Ocean Conditions (n = 427)", dict(size=5, color="rgba(240, 244, 247, 0.35)"), "Normal"),
+        (df_climate[df_climate["Marine Heatwave"]], "Marine Heatwave Event (n = 73)", dict(size=7, color="#e07a3f", line=dict(color="#0f171e", width=0.8)), "Marine Heatwave"),
+    ]:
+        fig3_contour.add_trace(go.Scatter(x=subset["SST (°C)"], y=subset["pH Level"], mode="markers", name=name, marker=marker_cfg, customdata=np.stack([subset["Location"], subset["Severity_Clean"], subset["Species Observed"]], axis=-1), hovertemplate=f"<b>%{{customdata[0]}}</b> ({tag})<br>SST: %{{x:.2f}} °C | pH: %{{y:.3f}}<br>Bleaching: %{{customdata[1]}} | Species: %{{customdata[2]}}<extra></extra>"))
+
+    add_linear_trend(fig3_contour, df_climate["SST (°C)"], df_climate["pH Level"], color="#d4a359", name="Thermal-pH Trend")
+    fig3_contour.update_layout(**make_layout(height=490, xaxis=dict(title="Sea Surface Temperature — SST (°C)", range=[23.0, 34.0], dtick=1, **AXIS_STYLE), yaxis=dict(title="Seawater pH Level", range=[7.85, 8.20], dtick=0.05, **AXIS_STYLE), legend=dict(orientation="h", y=-0.18, x=0.5, xanchor="center")))
+    st.plotly_chart(fig3_contour, use_container_width=True)
+
+    render_explanation(
+        context="Coral reefs face a dual threat from climate change: rising Sea Surface Temperatures (SST) trigger thermal bleaching, while excess atmospheric CO2 absorption lowers seawater pH (ocean acidification), weakening coral skeletons. This visualization is generated directly from all 500 reef observations in realistic_ocean_climate_dataset.csv (2015–2023).",
+        description="A two-dimensional density contour plot mapping Sea Surface Temperature (SST in °C, horizontal axis) against Seawater pH Level (vertical axis). Darker blue contours indicate where reef observations cluster most densely, overlaid with individual reef surveys (orange points denote Marine Heatwave events) and a dashed linear trendline.",
+        conclusion=f"SST and seawater pH exhibit a clear inverse correlation (r = {df_climate['SST (°C)'].corr(df_climate['pH Level']):.2f}): as ocean temperatures rise from 25 °C toward 32 °C, seawater pH declines steadily from ~8.12 down to ~7.95. All 73 Marine Heatwave observations (orange markers) cluster in the lower-right high-stress regime (SST >= 30 °C and low pH), showing how thermal stress and acidification compound simultaneously on vulnerable reefs."
+    )
+else:
+    st.warning("realistic_ocean_climate_dataset.csv was not found in the project folder.")
+
+section_header("sec-4", "Visualization 04 — Spatial Distribution &amp; Regional Vulnerability", "04. Global Geography of Coral Bleaching Hotspots")
+if df_global is not None:
+    geo_level = st.radio("Map and ranking aggregation level:", ["Marine Ecoregion (n >= 10 surveys)", "Ocean Basin", "Individual Reef Sites (n >= 5 surveys)"], horizontal=True, key="sec4_geo")
+    group_col, min_n, bar_chart_title = {
+        "Marine Ecoregion (n >= 10 surveys)": ("Ecoregion_Name", 10, "Top 10 Highest-Bleaching Marine Ecoregions (n >= 10)"),
+        "Ocean Basin": ("Ocean_Name", 1, "Mean Bleaching Across All Ocean Basins"),
+        "Individual Reef Sites (n >= 5 surveys)": ("Site_Name", 5, "Top 10 Highest-Bleaching Individual Reef Sites (n >= 5)"),
+    }[geo_level]
+
+    geo_df = df_global.dropna(subset=["Latitude_Degrees", "Longitude_Degrees", "Percent_Bleaching", group_col]).loc[lambda d: d[group_col].astype(str).str.lower() != "nd"].groupby(group_col).agg(
+        lat=("Latitude_Degrees", "mean"), lon=("Longitude_Degrees", "mean"), mean_bleach=("Percent_Bleaching", "mean"),
+        surveys=("Percent_Bleaching", "size"), country=("Country_Name", lambda s: s.mode().iat[0] if len(s.mode()) else "")
+    ).reset_index()
+    geo_df = geo_df[geo_df["surveys"] >= min_n].copy()
+
+    col4a, col4b = st.columns([1.45, 1])
+    with col4a:
+        fig4_map = px.scatter_geo(geo_df, lat="lat", lon="lon", size="surveys", color="mean_bleach", color_continuous_scale=[[0.0, PALETTE["healthy"]], [0.45, PALETTE["watch"]], [1.0, PALETTE["bleached"]]], hover_name=group_col, hover_data={"country": True, "mean_bleach": ":.1f", "surveys": True, "lat": False, "lon": False}, size_max=28)
+        fig4_map.update_geos(projection_type="natural earth", landcolor="#182430", oceancolor="#0f171e", showocean=True, showland=True, showcountries=True, countrycolor="#263847", coastlinecolor="#263847", bgcolor="rgba(15, 23, 30, 0)", lataxis_range=[-42, 42])
+        fig4_map.update_layout(**make_layout(height=440, margin=dict(l=0, r=0, t=10, b=10), coloraxis_colorbar=dict(title="Mean Bleach %", thickness=12)))
+        st.plotly_chart(fig4_map, use_container_width=True)
+
+    with col4b:
+        top_ranked = geo_df.nlargest(10, "mean_bleach").sort_values("mean_bleach", ascending=True).copy()
+        top_ranked["Short_Name"] = top_ranked[group_col].astype(str).str.slice(0, 28)
+        max_x = float(top_ranked["mean_bleach"].max()) * 1.24 if len(top_ranked) > 0 else 80.0
+        fig4_bar = go.Figure(go.Bar(x=top_ranked["mean_bleach"], y=top_ranked["Short_Name"], orientation="h", marker=dict(color=top_ranked["mean_bleach"], colorscale=[[0, PALETTE["watch"]], [1, PALETTE["bleached"]]]), text=top_ranked["mean_bleach"].round(1).astype(str) + "%", textposition="outside", cliponaxis=False, customdata=np.stack([top_ranked[group_col], top_ranked["surveys"]], axis=-1), hovertemplate="<b>%{customdata[0]}</b><br>Mean Bleaching: %{x:.1f}%<br>Surveys: %{customdata[1]:,}<extra></extra>"))
+        fig4_bar.update_layout(**make_layout(height=440, title=dict(text=bar_chart_title, font=dict(size=13)), xaxis=dict(title="Mean Bleaching (%)", range=[0, max_x], **AXIS_STYLE), yaxis=dict(title="", **AXIS_STYLE)))
+        st.plotly_chart(fig4_bar, use_container_width=True)
+
+    top_entity_name = top_ranked.iloc[-1][group_col] if len(top_ranked) > 0 else "N/A"
+    top_entity_val = top_ranked.iloc[-1]["mean_bleach"] if len(top_ranked) > 0 else 0.0
+    render_explanation(
+        context="Coral reefs occupy less than 1% of the ocean floor across tropical latitudes (30°N to 30°S), yet local ocean currents, basin geometry, and shelf depth create stark geographic differences in bleaching vulnerability. This view combines global_bleaching_environmental.csv and coral3.csv.",
+        description="Left: Tropical world map where each circle represents a marine ecoregion, ocean basin, or individual reef site depending on the toggle selected above; circle size scales with survey count and color indicates mean bleaching severity. Right: Dynamically updated horizontal bar chart ranking the highest-bleaching entities in the active geographic category.",
+        conclusion=f"Under the current geographic view ({geo_level}), {top_entity_name} ranks highest with {top_entity_val:.1f}% mean bleaching. Across ocean basins, the Indian Ocean and Atlantic/Caribbean exhibit higher average severity per survey than the Pacific, though bubble sizes reveal substantial sampling bias toward heavily studied regions such as the Great Barrier Reef and Florida Keys."
+    )
+
+section_header("sec-5", "Visualization 05 — Physical Buffering &amp; Micro-Habitat Controls", "05. How Water Depth, Wave Exposure, and Season Shape Bleaching Risk")
+if df_global is not None:
+    col5a, col5b, col5c = st.columns(3)
+
+    with col5a:
+        dep_df = df_global.dropna(subset=["Depth_m", "Percent_Bleaching"]).query("0 < Depth_m <= 35").copy()
+        dep_df["Depth_Band"] = pd.cut(dep_df["Depth_m"], bins=[0, 3, 6, 10, 15, 25, 35], labels=["0–3m", "3–6m", "6–10m", "10–15m", "15–25m", "25–35m"])
+        dep_agg = dep_df.groupby("Depth_Band", observed=False).agg(mean_bleach=("Percent_Bleaching", "mean"), n=("Percent_Bleaching", "size")).reset_index()
+        fig5_dep = go.Figure(go.Bar(x=dep_agg["Depth_Band"].astype(str), y=dep_agg["mean_bleach"], marker_color=PALETTE["cool"], text=dep_agg["mean_bleach"].round(1).astype(str) + "%", textposition="outside", customdata=dep_agg["n"], hovertemplate="<b>Depth %{x}</b><br>Mean Bleaching: %{y:.1f}%<br>Surveys: %{customdata:,}<extra></extra>"))
+        fig5_dep.update_layout(**make_layout(height=380, title=dict(text="Mean Bleaching by Water Depth", font=dict(size=13)), xaxis=dict(title="Reef Depth Band (m)", **AXIS_STYLE), yaxis=dict(title="Mean Bleaching (%)", range=[0, 22], **AXIS_STYLE)))
+        st.plotly_chart(fig5_dep, use_container_width=True)
+
+    with col5b:
+        exp_agg = df_global[df_global["Exposure"].isin(["Exposed", "Sheltered", "Sometimes"])].dropna(subset=["Percent_Bleaching"]).groupby("Exposure").agg(mean_bleach=("Percent_Bleaching", "mean"), n=("Percent_Bleaching", "size")).reindex(["Exposed", "Sometimes", "Sheltered"]).reset_index()
+        fig5_exp = go.Figure(go.Bar(x=exp_agg["Exposure"], y=exp_agg["mean_bleach"], marker_color=[PALETTE["bleached"], PALETTE["watch"], PALETTE["healthy"]], text=exp_agg["mean_bleach"].round(1).astype(str) + "%", textposition="outside", customdata=exp_agg["n"], hovertemplate="<b>%{x} Reefs</b><br>Mean Bleaching: %{y:.1f}%<br>Surveys: %{customdata:,}<extra></extra>"))
+        fig5_exp.update_layout(**make_layout(height=380, title=dict(text="Mean Bleaching by Reef Exposure", font=dict(size=13)), xaxis=dict(title="Wave & Sunlight Exposure", **AXIS_STYLE), yaxis=dict(title="Mean Bleaching (%)", range=[0, 18], **AXIS_STYLE)))
+        st.plotly_chart(fig5_exp, use_container_width=True)
+
+    with col5c:
+        mo_agg = df_global.dropna(subset=["Date_Month", "Percent_Bleaching"]).query("1 <= Date_Month <= 12").groupby("Date_Month").agg(mean_bleach=("Percent_Bleaching", "mean"), n=("Percent_Bleaching", "size")).reset_index()
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        mo_agg["Month"] = mo_agg["Date_Month"].astype(int).apply(lambda m: month_names[m - 1])
+        fig5_mo = go.Figure(go.Scatter(x=mo_agg["Month"], y=mo_agg["mean_bleach"], mode="lines+markers", line=dict(color=PALETTE["watch"], width=2.3), marker=dict(size=7, color=PALETTE["bleached"]), customdata=mo_agg["n"], hovertemplate="<b>%{x}</b><br>Mean Bleaching: %{y:.1f}%<br>Surveys: %{customdata:,}<extra></extra>"))
+        fig5_mo.update_layout(**make_layout(height=380, title=dict(text="Seasonal Bleaching Cycle by Month", font=dict(size=13)), xaxis=dict(title="Calendar Month", **AXIS_STYLE), yaxis=dict(title="Mean Bleaching (%)", **AXIS_STYLE)))
+        st.plotly_chart(fig5_mo, use_container_width=True)
+
+    render_explanation(
+        context="Even during a regional marine heatwave, adjacent reefs often experience markedly different survival rates. Local reef geometry—specifically water depth, exposure to direct solar irradiance, and seasonal heat accumulation—controls how much thermal energy reaches coral tissues.",
+        description="Three comparative panels derived from global_bleaching_environmental.csv: (Left) mean bleaching across six depth bands from shallow reef flats (0–3 m) to mesophotic slopes (25–35 m); (Center) mean bleaching across Exposed, Sometimes Exposed, and Sheltered reefs; (Right) monthly mean bleaching across the calendar year.",
+        conclusion="Shallow reefs (0–3 m) suffer the highest bleaching (14.4% mean) because sunlight penetrates undiminished and surface waters stratify rapidly, whereas deeper reefs (15–35 m) act as cooler thermal refugia. Exposed reef fronts bleach more severely than sheltered reefs (11.5% vs. 9.0%), and global bleaching peaks in August–October during the Northern Hemisphere late-summer thermal maximum (where most global reef surveys are concentrated)."
+    )
+
+section_header("sec-6", "Visualization 06 — Direct Correlation Ranking", "06. Which Environmental Factors Correlate Most Strongly with Bleaching?")
+if df_regional is not None and df_global is not None:
+    col6a, col6b = st.columns(2)
+    reg_features = {"DHW_Stress": "Cumulative Heat Stress (DHW)", "ONI_Index": "El Nino Index (ONI)", "Temperature_Celsius": "Water Temperature (°C)", "NDVI": "Surface Algal/Vegetation Index (NDVI)", "Salinity": "Water Salinity (PSU)", "Nitrate": "Nitrate Nutrient Concentration", "Chlorophyll_A_mg_m3": "Chlorophyll-a (Phytoplankton)", "Turbidity_NTU": "Water Turbidity (NTU)", "pH": "Seawater pH Level", "Distance_to_Shore_km": "Distance to Shore (km)", "Dissolved_O2": "Dissolved Oxygen (mg/L)"}
+    glob_features = {"SSTA_DHW": "Cumulative Heat Stress (SSTA DHW)", "Temperature_Maximum": "Maximum Temperature (K)", "SSTA": "Temperature Anomaly (SSTA)", "Temperature_Mean": "Mean Temperature (K)", "Turbidity": "Water Turbidity", "Distance_to_Shore": "Distance to Shore (m)", "Cyclone_Frequency": "Historical Cyclone Frequency", "Windspeed": "Surface Wind Speed (m/s)", "Depth_m": "Reef Depth (m)"}
+
+    for col_box, src_df, target_col, feat_map, title_txt, x_rng in [
+        (col6a, df_regional, "Bleaching_Percent", reg_features, "Regional Sensor Drivers (coral_bleaching.csv)", [-0.18, 0.42]),
+        (col6b, df_global, "Percent_Bleaching", glob_features, "Global Physical Drivers (global_bleaching_environmental.csv)", [-0.18, 0.35]),
+    ]:
+        with col_box:
+            corr_df = pd.DataFrame([{"Variable": lbl, "Correlation (r)": src_df[target_col].corr(src_df[c])} for c, lbl in feat_map.items() if c in src_df.columns]).dropna().sort_values("Correlation (r)", ascending=True)
+            fig6 = go.Figure(go.Bar(x=corr_df["Correlation (r)"], y=corr_df["Variable"], orientation="h", marker_color=[PALETTE["bleached"] if v > 0 else PALETTE["cool"] for v in corr_df["Correlation (r)"]], text=corr_df["Correlation (r)"].apply(lambda v: f"{v:+.2f}"), textposition="outside", hovertemplate="<b>%{y}</b><br>Pearson r with Bleaching: %{x:+.3f}<extra></extra>"))
+            fig6.add_vline(x=0, line_color="rgba(255,255,255,0.25)", line_width=1)
+            fig6.update_layout(**make_layout(height=430, title=dict(text=title_txt, font=dict(size=13)), xaxis=dict(title="Correlation (r) with Bleaching %", range=x_rng, **AXIS_STYLE), yaxis=dict(title="", **AXIS_STYLE)))
+            st.plotly_chart(fig6, use_container_width=True)
+
+    render_explanation(
+        context="Instead of displaying complex multi-variable correlation grids that are difficult to read at a glance, these ranked correlation bars directly measure each environmental variable's linear relationship (Pearson r) with coral bleaching severity across both local water-chemistry sensors and global physical records.",
+        description="Left: Correlation of 11 chemical and thermal variables in coral_bleaching.csv against Bleaching_Percent. Right: Correlation of 9 physical and thermal variables in global_bleaching_environmental.csv against Percent_Bleaching. Coral-red bars indicate stressors that increase bleaching; blue bars indicate factors associated with lower bleaching.",
+        conclusion="Across both independent datasets, cumulative heat stress (DHW) ranks first (r = +0.33 regionally; r = +0.25 globally), followed by El Nino warming (ONI r = +0.15) and instantaneous temperature anomalies. Conversely, higher Dissolved Oxygen (r = -0.07), higher pH (r = -0.04), greater water depth (r = -0.07), and higher wind-driven mixing (r = -0.04) act as protective buffers. Because bleaching responds non-linearly above thermal thresholds, linear r values understate the true step-change impact once DHW crosses 4 °C-weeks."
+    )
+
+section_header("sec-7", "Visualization 07 — Multi-Variable Ecological Pathways", "07. Parallel Coordinates: How Marine Heatwaves Reduce pH and Reef Biodiversity")
+if df_climate is not None:
+    st.markdown("<p style='color:#9fb0bc;font-size:0.86rem;margin-bottom:8px;'>Each line represents one reef survey (n = 500). <b>Blue lines</b> show normal ocean conditions; <b>orange lines</b> show Marine Heatwave events. Drag vertically along any axis to filter specific ranges.</p>", unsafe_allow_html=True)
+    fig7_par = go.Figure(data=go.Parcoords(
+        line=dict(color=df_climate["Heatwave_Num"], colorscale=[[0.0, "#4f83a3"], [1.0, "#e07a3f"]], showscale=True, cmin=0, cmax=1, colorbar=dict(title="Ocean Regime", tickvals=[0, 1], ticktext=["Normal (False)", "Marine Heatwave (True)"], thickness=14)),
+        dimensions=[
+            dict(range=[175, 50], label="Species Observed", values=df_climate["Species Observed"]),
+            dict(range=[33.5, 23.5], label="SST (°C)", values=df_climate["SST (°C)"]),
+            dict(range=[8.20, 7.86], label="pH Level", values=df_climate["pH Level"]),
+        ],
+        labelfont=dict(color="#f0f4f7", size=13, family="Inter, sans-serif"), tickfont=dict(color="#b8c4cc", size=11, family="Inter, sans-serif"), rangefont=dict(color="#5ea897", size=11, family="Inter, sans-serif"),
+    ))
+    fig7_par.update_layout(**make_layout(height=460, margin=dict(l=65, r=65, t=55, b=35)))
+    st.plotly_chart(fig7_par, use_container_width=True)
+
+    hw_summary = df_climate.groupby("Marine Heatwave")[["SST (°C)", "pH Level", "Species Observed"]].mean()
+    c7_1, c7_2, c7_3 = st.columns(3)
+    c7_1.metric("Mean SST: Heatwave vs. Normal", f"{hw_summary.loc[True, 'SST (°C)']:.2f} °C", f"+{hw_summary.loc[True, 'SST (°C)'] - hw_summary.loc[False, 'SST (°C)']:.2f} °C hotter during heatwaves", delta_color="inverse")
+    c7_2.metric("Mean Seawater pH: Heatwave vs. Normal", f"{hw_summary.loc[True, 'pH Level']:.3f}", f"{hw_summary.loc[True, 'pH Level'] - hw_summary.loc[False, 'pH Level']:+.3f} more acidic", delta_color="normal")
+    c7_3.metric("Mean Species Observed: Heatwave vs. Normal", f"{hw_summary.loc[True, 'Species Observed']:.1f} species", f"{hw_summary.loc[True, 'Species Observed'] - hw_summary.loc[False, 'Species Observed']:+.1f} fewer species", delta_color="normal")
+
+    render_explanation(
+        context="To understand how thermal stress impacts entire reef ecosystems rather than single variables in isolation, this multi-dimensional visualization connects physical temperature (SST), water chemistry (pH), and biological biodiversity (Species Observed) across all 500 records in realistic_ocean_climate_dataset.csv.",
+        description="A three-axis Parallel Coordinates Plot where each polyline traces a single reef observation across Species Observed (left, inverted scale), Sea Surface Temperature in °C (center, inverted scale), and Seawater pH Level (right, inverted scale). Blue lines represent normal ocean conditions (n = 427), while orange lines represent Marine Heatwave events (n = 73).",
+        conclusion="The orange heatwave lines form a distinct structural band: every Marine Heatwave spikes downward to 30.0–33.2 °C on the center SST axis while simultaneously pulling upward into low biodiversity (averaging 97.6 species vs. 124.4 under normal conditions; r = -0.68 with SST) and lower pH (7.998 vs. 8.059). This proves that marine heatwaves trigger simultaneous chemical acidification and rapid loss of reef-associated marine species."
+    )
+else:
+    st.warning("realistic_ocean_climate_dataset.csv was not found in the project folder.")
+
+section_header("sec-8", "Visualization 08 — Biological Progression &amp; Visual Reference", "08. Three Stages of Coral Health: Healthy to Bleached to Dead")
+img_healthy, path_h = find_stage_photo("healthy")
+img_bleached, path_b = find_stage_photo("bleached")
+img_dead, path_d = find_stage_photo("dead")
+
+if img_healthy is not None and img_bleached is not None and img_dead is not None:
+    st.markdown(f"<p style='color:#8fa1ad;font-size:0.84rem;margin-bottom:10px;'>Loaded automatically from local folder: <code>{IMAGE_ROOT}</code> ({path_h.name}, {path_b.name}, {path_d.name})</p>", unsafe_allow_html=True)
+    stage_pct = st.slider("Slide to simulate coral degradation progression (0% = Healthy, 50% = Bleached, 100% = Dead):", min_value=0, max_value=100, value=0, step=2, key="coral_stage_slider")
+    blended_img = blend_coral_stages(stage_pct, img_healthy, img_bleached, img_dead)
+
+    if stage_pct < 25:
+        stage_title, stage_badge_color, dhw_est, recovery_est, stage_note = ("Stage 1: Healthy Coral Colony", PALETTE["healthy"], "0.0 – 2.0 °C-weeks", "Baseline State (Thriving Symbiosis)", "Dense populations of symbiotic algae (zooxanthellae) live inside the coral's tissue, giving the colony its rich natural pigmentation and supplying up to 90% of its energy via photosynthesis.")
+    elif stage_pct < 75:
+        stage_title, stage_badge_color, dhw_est, recovery_est, stage_note = ("Stage 2: Thermal Bleaching (Stressed, Still Alive)", PALETTE["watch"], "4.0 – 7.9 °C-weeks", "Reversible if ocean temperatures cool within 2–4 weeks", "Sustained heat forces the coral to expel its stressed zooxanthellae. The tissue turns transparent, exposing the bright white calcium carbonate skeleton underneath. The coral is starving but still alive.")
+    else:
+        stage_title, stage_badge_color, dhw_est, recovery_est, stage_note = ("Stage 3: Coral Mortality & Algal Overgrowth", PALETTE["bleached"], ">= 8.0 °C-weeks", "Irreversible for affected colony (requires decades of larval regrowth)", "When extreme heat persists beyond 8 °C-weeks, tissue necrosis sets in. Once the coral dies, turf algae rapidly colonize the bare skeleton, turning the reef dull brown-grey and collapsing fish habitat.")
+
+    col_sim_img, col_sim_info = st.columns([1.25, 1])
+    with col_sim_img:
+        st.image(blended_img, use_container_width=True)
+    with col_sim_info:
+        st.markdown(f'<div style="background:#15202b;border:1px solid #243442;border-top:4px solid {stage_badge_color};border-radius:6px;padding:20px 22px;height:100%;"><div style="color:{stage_badge_color};font-size:0.8rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Degradation Index: {stage_pct}%</div><h3 style="margin-top:0;margin-bottom:12px;">{stage_title}</h3><p style="font-size:0.9rem;color:#d6dde2;margin-bottom:14px;">{stage_note}</p><p style="font-size:0.85rem;color:#9fb0bc;margin-bottom:6px;"><b style="color:#f0f4f7;">Typical Heat Exposure:</b> {dhw_est}</p><p style="font-size:0.85rem;color:#9fb0bc;margin-bottom:0;"><b style="color:#f0f4f7;">Recovery Potential:</b> {recovery_est}</p></div>', unsafe_allow_html=True)
+
+    st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True)
+    st.markdown("### Side-by-Side Reference Stages")
+    stages_info = [
+        ("1. Healthy Reef", img_healthy, PALETTE["healthy"], "Intact zooxanthellae symbiosis, active calcification, and high structural shelter for reef biodiversity."),
+        ("2. Bleached Reef", img_bleached, PALETTE["watch"], "Expulsion of symbiotic algae exposes white skeleton. Urgent conservation window before mortality occurs."),
+        ("3. Dead Reef", img_dead, PALETTE["bleached"], "Complete tissue loss followed by filamentous algal turf colonization and structural erosion."),
+    ]
+    for col_box, (title, image_obj, accent_col, caption_txt) in zip(st.columns(3), stages_info):
+        with col_box:
+            st.image(image_obj, use_container_width=True)
+            st.markdown(f"<div style='border-left:3px solid {accent_col};padding-left:10px;margin-top:8px;'><div style='font-weight:600;color:#f0f4f7;font-size:0.92rem;'>{title}</div><div style='color:#9fb0bc;font-size:0.83rem;line-height:1.45;'>{caption_txt}</div></div>", unsafe_allow_html=True)
+else:
+    missing_list = [name for name, img in [("healthy", img_healthy), ("bleached", img_bleached), ("dead", img_dead)] if img is None]
+    st.warning(f"Could not find {', '.join(missing_list)} inside `{IMAGE_ROOT}`. Ensure `healthy.jpg`, `bleached.jpg`, and `dead.jpg` (or `.png` / `.jpeg` / `.webp`) are saved in your `images/` folder.")
+
+render_explanation(
+    context="Quantitative bleaching percentages become far more actionable when paired with visual ecological states. In field surveys (such as Damage_State in coral_bleaching.csv), scientists distinguish between intact colonies, bleached-but-living colonies, and dead algae-covered skeletons.",
+    description="This interactive visual loads your three local reference photographs directly from your project's images/ directory and uses alpha-channel image interpolation to smoothly transition across the biological degradation continuum from 0% (Healthy) to 50% (Bleached) to 100% (Dead), accompanied by a side-by-side comparison.",
+    conclusion="Separating 'bleached' from 'dead' is vital for marine management: bleached reefs remain living organisms capable of recovering pigmentation if local water quality is protected and temperatures subside, whereas dead reefs require decades of larval recruitment or active reef restoration. Visual inspection confirms what the statistical datasets show—preventing DHW from crossing 8 °C-weeks is the critical boundary between reversible stress and permanent ecosystem loss."
+)
